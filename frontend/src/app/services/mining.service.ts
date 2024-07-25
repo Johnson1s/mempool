@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { Observable, of } from 'rxjs';
+import { map, tap } from 'rxjs/operators';
 import { PoolsStats, SinglePoolStats } from '../interfaces/node-api.interface';
 import { ApiService } from '../services/api.service';
 import { StateService } from './state.service';
@@ -12,7 +12,7 @@ export interface MiningUnits {
 }
 
 export interface MiningStats {
-  lastEstimatedHashrate: string;
+  lastEstimatedHashrate: number;
   blockCount: number;
   totalEmptyBlock: number;
   totalEmptyBlockRatio: string;
@@ -25,6 +25,12 @@ export interface MiningStats {
   providedIn: 'root'
 })
 export class MiningService {
+  cache: {
+    [interval: string]: {
+      lastUpdated: number;
+      data: MiningStats;
+    }
+  } = {};
 
   constructor(
     private stateService: StateService,
@@ -36,9 +42,20 @@ export class MiningService {
    * Generate pool ranking stats
    */
   public getMiningStats(interval: string): Observable<MiningStats> {
-    return this.apiService.listPools$(interval).pipe(
-      map(response => this.generateMiningStats(response))
-    );
+    // returned cached data fetched within the last 5 minutes
+    if (this.cache[interval] && this.cache[interval].lastUpdated > (Date.now() - (5 * 60000))) {
+      return of(this.cache[interval].data);
+    } else {
+      return this.apiService.listPools$(interval).pipe(
+        map(response => this.generateMiningStats(response)),
+        tap(stats => {
+          this.cache[interval] = {
+            lastUpdated: Date.now(),
+            data: stats,
+          };
+        })
+      );
+    }
   }
 
   /**
@@ -94,7 +111,7 @@ export class MiningService {
     const poolsStats = stats.pools.map((poolStat) => {
       return {
         share: parseFloat((poolStat.blockCount / stats.blockCount * 100).toFixed(2)),
-        lastEstimatedHashrate: (poolStat.blockCount / stats.blockCount * stats.lastEstimatedHashrate / hashrateDivider).toFixed(2),
+        lastEstimatedHashrate: poolStat.blockCount / stats.blockCount * stats.lastEstimatedHashrate / hashrateDivider,
         emptyBlockRatio: (poolStat.emptyBlocks / poolStat.blockCount * 100).toFixed(2),
         logo: `/resources/mining-pools/` + poolStat.slug + '.svg',
         ...poolStat
@@ -102,7 +119,7 @@ export class MiningService {
     });
 
     return {
-      lastEstimatedHashrate: (stats.lastEstimatedHashrate / hashrateDivider).toFixed(2),
+      lastEstimatedHashrate: stats.lastEstimatedHashrate / hashrateDivider,
       blockCount: stats.blockCount,
       totalEmptyBlock: totalEmptyBlock,
       totalEmptyBlockRatio: totalEmptyBlockRatio,

@@ -45,6 +45,7 @@ import bitcoinCoreRoutes from './api/bitcoin/bitcoin-core.routes';
 import bitcoinSecondClient from './api/bitcoin/bitcoin-second-client';
 import accelerationRoutes from './api/acceleration/acceleration.routes';
 import aboutRoutes from './api/about.routes';
+import mempoolBlocks from './api/mempool-blocks';
 
 class Server {
   private wss: WebSocket.Server | undefined;
@@ -149,6 +150,7 @@ class Server {
 
     await poolsUpdater.updatePoolsJson(); // Needs to be done before loading the disk cache because we sometimes wipe it
     await syncAssets.syncAssets$();
+    await mempoolBlocks.updatePools$();
     if (config.MEMPOOL.ENABLED) {
       if (config.MEMPOOL.CACHE_ENABLED) {
         await diskCache.$loadMempoolCache();
@@ -227,7 +229,7 @@ class Server {
       const newMempool = await bitcoinApi.$getRawMempool();
       const minFeeMempool = memPool.limitGBT ? await bitcoinSecondClient.getRawMemPool() : null;
       const minFeeTip = memPool.limitGBT ? await bitcoinSecondClient.getBlockCount() : -1;
-      const newAccelerations = await accelerationApi.$fetchAccelerations();
+      const newAccelerations = await accelerationApi.$updateAccelerations();
       const numHandledBlocks = await blocks.$updateBlocks();
       const pollRate = config.MEMPOOL.POLL_RATE_MS * (indexer.indexerIsRunning() ? 10 : 1);
       if (numHandledBlocks === 0) {
@@ -331,7 +333,9 @@ class Server {
     if (config.MEMPOOL_SERVICES.ACCELERATIONS) {
       accelerationRoutes.initRoutes(this.app);
     }
-    aboutRoutes.initRoutes(this.app);
+    if (!config.MEMPOOL.OFFICIAL) {
+      aboutRoutes.initRoutes(this.app);
+    }
   }
 
   healthCheck(): void {

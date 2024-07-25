@@ -32,8 +32,8 @@ export class IncomingTransactionsGraphComponent implements OnInit, OnChanges, On
   @Input() template: ('widget' | 'advanced') = 'widget';
   @Input() windowPreferenceOverride: string;
   @Input() outlierCappingEnabled: boolean = false;
+  @Input() isLoading: boolean;
 
-  isLoading = true;
   mempoolStatsChartOption: EChartsOption = {};
   mempoolStatsChartInitOption = {
     renderer: 'svg'
@@ -52,8 +52,6 @@ export class IncomingTransactionsGraphComponent implements OnInit, OnChanges, On
   ) { }
 
   ngOnInit() {
-    this.isLoading = true;
-
     this.rateUnitSub = this.stateService.rateUnits$.subscribe(rateUnits => {
       this.weightMode = rateUnits === 'wu';
       if (this.data) {
@@ -79,7 +77,6 @@ export class IncomingTransactionsGraphComponent implements OnInit, OnChanges, On
     if (!this.data) {
       return; 
     }
-    this.isLoading = false;
   }
 
   /**
@@ -226,7 +223,7 @@ export class IncomingTransactionsGraphComponent implements OnInit, OnChanges, On
             itemFormatted += `<div class="item">
                   <div class="indicator-container">${colorSpan(bestItem.color)}</div>
                   <div class="grow"></div>
-                  <div class="value">${formatNumber(bestItem.value[1], this.locale, '1.0-0')}<span class="symbol">vB/s</span></div>
+                  <div class="value">${formatNumber(bestItem.value[1], this.locale, '1.0-0')} <span class="symbol">vB/s</span></div>
                 </div>`;
           }
           return `<div class="tx-wrapper-tooltip-chart ${(this.template === 'advanced') ? 'tx-wrapper-tooltip-chart-advanced' : ''}" 
@@ -252,12 +249,13 @@ export class IncomingTransactionsGraphComponent implements OnInit, OnChanges, On
         }
       ],
       yAxis: {
-        max: (value) => {
-          if (!this.outlierCappingEnabled || value.max < this.medianVbytesPerSecond * OUTLIERS_MEDIAN_MULTIPLIER) {
-            return undefined;
-          } else {
-            return Math.round(this.medianVbytesPerSecond * OUTLIERS_MEDIAN_MULTIPLIER);
+        max: (value): number => {
+          let cappedMax = value.max;
+          if (this.outlierCappingEnabled && value.max >= (this.medianVbytesPerSecond * OUTLIERS_MEDIAN_MULTIPLIER)) {
+            cappedMax = Math.round(this.medianVbytesPerSecond * OUTLIERS_MEDIAN_MULTIPLIER);
           }
+          // always show the clearing rate line, plus a small margin
+          return Math.max(1800, cappedMax);
         },
         type: 'value',
         axisLabel: {

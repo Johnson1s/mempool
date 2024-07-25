@@ -27,6 +27,7 @@ class Mempool {
     deletedTransactions: MempoolTransactionExtended[], accelerationDelta: string[], candidates?: GbtCandidates) => Promise<void>) | undefined;
 
   private accelerations: { [txId: string]: Acceleration } = {};
+  private accelerationPositions: { [txid: string]: { poolId: number, pool: string, block: number, vsize: number }[] } = {};
 
   private txPerSecondArray: number[] = [];
   private txPerSecond: number = 0;
@@ -395,10 +396,6 @@ class Mempool {
   }
 
   public $updateAccelerations(newAccelerations: Acceleration[]): string[] {
-    if (!config.MEMPOOL_SERVICES.ACCELERATIONS) {
-      return [];
-    }
-
     try {
       const changed: string[] = [];
 
@@ -512,6 +509,14 @@ class Mempool {
         removed
       };
     }
+  }
+
+  setAccelerationPositions(positions: { [txid: string]: { poolId: number, pool: string, block: number, vsize: number }[] }): void {
+    this.accelerationPositions = positions;
+  }
+
+  getAccelerationPositions(txid: string): { [pool: number]: { poolId: number, pool: string, block: number, vsize: number } } | undefined {
+    return this.accelerationPositions[txid];
   }
 
   private startTimer() {

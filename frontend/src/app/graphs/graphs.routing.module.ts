@@ -3,6 +3,7 @@ import { RouterModule, Routes } from '@angular/router';
 import { BlockHealthGraphComponent } from '../components/block-health-graph/block-health-graph.component';
 import { BlockFeeRatesGraphComponent } from '../components/block-fee-rates-graph/block-fee-rates-graph.component';
 import { BlockFeesGraphComponent } from '../components/block-fees-graph/block-fees-graph.component';
+import { BlockFeesSubsidyGraphComponent } from '../components/block-fees-subsidy-graph/block-fees-subsidy-graph.component';
 import { BlockRewardsGraphComponent } from '../components/block-rewards-graph/block-rewards-graph.component';
 import { BlockSizesWeightsGraphComponent } from '../components/block-sizes-weights-graph/block-sizes-weights-graph.component';
 import { GraphsComponent } from '../components/graphs/graphs.component';
@@ -49,7 +50,7 @@ const routes: Routes = [
       },
       {
         path: 'acceleration',
-        data: { networks: ['bitcoin'] },
+        data: { networks: ['bitcoin'], networkSpecific: true, onlySubnet: [''] },
         component: StartComponent,
         children: [
           {
@@ -59,9 +60,13 @@ const routes: Routes = [
         ]
       },
       {
-        path: 'acceleration/list',
-        data: { networks: ['bitcoin'] },
+        path: 'acceleration/list/:page',
+        data: { networks: ['bitcoin'], networkSpecific: true, onlySubnet: [''] },
         component: AccelerationsListComponent,
+      },
+      {
+        path: 'acceleration/list',
+        redirectTo: 'acceleration/list/1',
       },
       {
         path: 'mempool-block/:id',
@@ -114,6 +119,11 @@ const routes: Routes = [
             component: BlockFeesGraphComponent,
           },
           {
+            path: 'mining/block-fees-subsidy',
+            data: { networks: ['bitcoin'] },
+            component: BlockFeesSubsidyGraphComponent,
+          },
+          {
             path: 'mining/block-rewards',
             data: { networks: ['bitcoin'] },
             component: BlockRewardsGraphComponent,
@@ -130,7 +140,7 @@ const routes: Routes = [
           },
           {
             path: 'acceleration/fees',
-            data: { networks: ['bitcoin'] },
+            data: { networks: ['bitcoin'], networkSpecific: true, onlySubnet: [''] },
             component: AccelerationFeesGraphComponent,
           },
           {

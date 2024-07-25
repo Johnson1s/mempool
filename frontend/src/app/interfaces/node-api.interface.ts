@@ -29,6 +29,8 @@ export interface CpfpInfo {
   sigops?: number;
   adjustedVsize?: number;
   acceleration?: boolean;
+  acceleratedBy?: number[];
+  acceleratedAt?: number;
 }
 
 export interface RbfInfo {
@@ -132,13 +134,14 @@ export interface ITranslators { [language: string]: string; }
  */
 export interface SinglePoolStats {
   poolId: number;
+  poolUniqueId: number; // unique global pool id
   name: string;
   link: string;
   blockCount: number;
   emptyBlocks: number;
   rank: number;
   share: number;
-  lastEstimatedHashrate: string;
+  lastEstimatedHashrate: number;
   emptyBlockRatio: string;
   logo: string;
   slug: string;
@@ -245,7 +248,13 @@ export interface RbfTransaction extends TransactionStripped {
 export interface MempoolPosition {
   block: number,
   vsize: number,
-  accelerated?: boolean
+  accelerated?: boolean,
+  acceleratedBy?: number[],
+}
+
+export interface AccelerationPosition extends MempoolPosition {
+  poolId: number;
+  offset?: number;
 }
 
 export interface RewardStats {
@@ -399,10 +408,11 @@ export interface Acceleration {
   bidBoost?: number;
   boostCost?: number;
   boostRate?: number;
+  minedByPoolUniqueId?: number;
 }
 
 export interface AccelerationHistoryParams {
-  status?: string;
+  status?: string; // Single status or comma separated list of status
   timeframe?: string;
   poolUniqueId?: number;
   blockHash?: string;

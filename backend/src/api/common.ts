@@ -258,9 +258,15 @@ export class Common {
     let opreturnCount = 0;
     for (const vout of tx.vout) {
       // scriptpubkey
-      if (['unknown', 'provably_unspendable', 'empty'].includes(vout.scriptpubkey_type)) {
+      if (['nonstandard', 'provably_unspendable', 'empty'].includes(vout.scriptpubkey_type)) {
         // (non-standard output type)
         return true;
+      } else if (vout.scriptpubkey_type === 'unknown') {
+        // undefined segwit version/length combinations are actually standard in outputs
+        // https://github.com/bitcoin/bitcoin/blob/2c79abc7ad4850e9e3ba32a04c530155cda7f980/src/script/interpreter.cpp#L1950-L1951
+        if (vout.scriptpubkey.startsWith('00') || !this.isWitnessProgram(vout.scriptpubkey)) {
+          return true;
+        }
       } else if (vout.scriptpubkey_type === 'multisig') {
         if (!DEFAULT_PERMIT_BAREMULTISIG) {
           // bare-multisig
@@ -286,7 +292,7 @@ export class Common {
         dustSize += getVarIntLength(dustSize);
         // add value size
         dustSize += 8;
-        if (['v0_p2wpkh', 'v0_p2wsh', 'v1_p2tr'].includes(vout.scriptpubkey_type)) {
+        if (Common.isWitnessProgram(vout.scriptpubkey)) {
           dustSize += 67;
         } else {
           dustSize += 148;
@@ -305,6 +311,27 @@ export class Common {
 
     // TODO: non-mandatory-script-verify-flag
 
+    return false;
+  }
+
+  // A witness program is any valid scriptpubkey that consists of a 1-byte push opcode
+  // followed by a data push between 2 and 40 bytes.
+  // https://github.com/bitcoin/bitcoin/blob/2c79abc7ad4850e9e3ba32a04c530155cda7f980/src/script/script.cpp#L224-L240
+  static isWitnessProgram(scriptpubkey: string): false | { version: number, program: string } {
+    if (scriptpubkey.length < 8 || scriptpubkey.length > 84) {
+      return false;
+    }
+    const version = parseInt(scriptpubkey.slice(0,2), 16);
+    if (version !== 0 && version < 0x51 || version > 0x60) {
+        return false;
+    }
+    const push = parseInt(scriptpubkey.slice(2,4), 16);
+    if (push + 2 === (scriptpubkey.length / 2)) {
+      return {
+        version: version ? version - 0x50 : 0,
+        program: scriptpubkey.slice(4),
+      };
+    }
     return false;
   }
 
@@ -392,12 +419,15 @@ export class Common {
     let flags = tx.flags ? BigInt(tx.flags) : 0n;
 
     // Update variable flags (CPFP, RBF)
+    flags &= ~TransactionFlags.cpfp_child;
     if (tx.ancestors?.length) {
       flags |= TransactionFlags.cpfp_child;
     }
+    flags &= ~TransactionFlags.cpfp_parent;
     if (tx.descendants?.length) {
       flags |= TransactionFlags.cpfp_parent;
     }
+    flags &= ~TransactionFlags.replacement;
     if (tx.replacement) {
       flags |= TransactionFlags.replacement;
     }
@@ -433,11 +463,10 @@ export class Common {
           case 'v0_p2wpkh': flags |= TransactionFlags.p2wpkh; break;
           case 'v0_p2wsh': flags |= TransactionFlags.p2wsh; break;
           case 'v1_p2tr': {
-            if (!vin.witness?.length) {
-              throw new Error('Taproot input missing witness data');
-            }
             flags |= TransactionFlags.p2tr;
-            flags = Common.isInscription(vin, flags);
+            if (vin.witness?.length) {
+              flags = Common.isInscription(vin, flags);
+            }
           } break;
         }
       } else {
@@ -780,96 +809,6 @@ export class Common {
     }
   }
 
-  static calculateCpfp(height: number, transactions: TransactionExtended[], saveRelatives: boolean = false): CpfpSummary {
-    const clusters: CpfpCluster[] = []; // list of all cpfp clusters in this block
-    const clusterMap: { [txid: string]: CpfpCluster } = {}; // map transactions to their cpfp cluster
-    let clusterTxs: TransactionExtended[] = []; // working list of elements of the current cluster
-    let ancestors: { [txid: string]: boolean } = {}; // working set of ancestors of the current cluster root
-    const txMap: { [txid: string]: TransactionExtended } = {};
-    // initialize the txMap
-    for (const tx of transactions) {
-      txMap[tx.txid] = tx;
-    }
-    // reverse pass to identify CPFP clusters
-    for (let i = transactions.length - 1; i >= 0; i--) {
-      const tx = transactions[i];
-      if (!ancestors[tx.txid]) {
-        let totalFee = 0;
-        let totalVSize = 0;
-        clusterTxs.forEach(tx => {
-          totalFee += tx?.fee || 0;
-          totalVSize += (tx.weight / 4);
-        });
-        const effectiveFeePerVsize = totalFee / totalVSize;
-        let cluster: CpfpCluster;
-        if (clusterTxs.length > 1) {
-          cluster = {
-            root: clusterTxs[0].txid,
-            height,
-            txs: clusterTxs.map(tx => { return { txid: tx.txid, weight: tx.weight, fee: tx.fee || 0 }; }),
-            effectiveFeePerVsize,
-          };
-          clusters.push(cluster);
-        }
-        clusterTxs.forEach(tx => {
-          txMap[tx.txid].effectiveFeePerVsize = effectiveFeePerVsize;
-          if (cluster) {
-            clusterMap[tx.txid] = cluster;
-          }
-        });
-        // reset working vars
-        clusterTxs = [];
-        ancestors = {};
-      }
-      clusterTxs.push(tx);
-      tx.vin.forEach(vin => {
-        ancestors[vin.txid] = true;
-      });
-    }
-    // forward pass to enforce ancestor rate caps
-    for (const tx of transactions) {
-      let minAncestorRate = tx.effectiveFeePerVsize;
-      for (const vin of tx.vin) {
-        if (txMap[vin.txid]?.effectiveFeePerVsize) {
-          minAncestorRate = Math.min(minAncestorRate, txMap[vin.txid].effectiveFeePerVsize);
-        }
-      }
-      // check rounded values to skip cases with almost identical fees
-      const roundedMinAncestorRate = Math.ceil(minAncestorRate);
-      const roundedEffectiveFeeRate = Math.floor(tx.effectiveFeePerVsize);
-      if (roundedMinAncestorRate < roundedEffectiveFeeRate) {
-        tx.effectiveFeePerVsize = minAncestorRate;
-        if (!clusterMap[tx.txid]) {
-          // add a single-tx cluster to record the dependent rate
-          const cluster = {
-            root: tx.txid,
-            height,
-            txs: [{ txid: tx.txid, weight: tx.weight, fee: tx.fee || 0 }],
-            effectiveFeePerVsize: minAncestorRate,
-          };
-          clusterMap[tx.txid] = cluster;
-          clusters.push(cluster);
-        } else {
-          // update the existing cluster with the dependent rate
-          clusterMap[tx.txid].effectiveFeePerVsize = minAncestorRate;
-        }
-      }
-    }
-    if (saveRelatives) {
-      for (const cluster of clusters) {
-        cluster.txs.forEach((member, index) => {
-          txMap[member.txid].descendants = cluster.txs.slice(0, index).reverse();
-          txMap[member.txid].ancestors = cluster.txs.slice(index + 1).reverse();
-          txMap[member.txid].effectiveFeePerVsize = cluster.effectiveFeePerVsize;
-        });
-      }
-    }
-    return {
-      transactions,
-      clusters,
-    };
-  }
-
   static calcEffectiveFeeStatistics(transactions: { weight: number, fee: number, effectiveFeePerVsize?: number, txid: string, acceleration?: boolean }[]): EffectiveFeeStats {
     const sortedTxs = transactions.map(tx => { return { txid: tx.txid, weight: tx.weight, rate: tx.effectiveFeePerVsize || ((tx.fee || 0) / (tx.weight / 4)) }; }).sort((a, b) => a.rate - b.rate);
 
@@ -877,9 +816,10 @@ export class Common {
     let medianFee = 0;
     let medianWeight = 0;
 
-    // calculate the "medianFee" as the average fee rate of the middle 10000 weight units of transactions
-    const leftBound = 1995000;
-    const rightBound = 2005000;
+    // calculate the "medianFee" as the average fee rate of the middle 0.25% weight units of transactions
+    const halfWidth = config.MEMPOOL.BLOCK_WEIGHT_UNITS / 800;
+    const leftBound = Math.floor((config.MEMPOOL.BLOCK_WEIGHT_UNITS / 2) - halfWidth);
+    const rightBound = Math.ceil((config.MEMPOOL.BLOCK_WEIGHT_UNITS / 2) + halfWidth);
     for (let i = 0; i < sortedTxs.length && weightCount < rightBound; i++) {
       const left = weightCount;
       const right = weightCount + sortedTxs[i].weight;

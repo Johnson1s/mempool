@@ -12,6 +12,7 @@ import { PriceService } from './services/price.service';
 import { EnterpriseService } from './services/enterprise.service';
 import { WebsocketService } from './services/websocket.service';
 import { AudioService } from './services/audio.service';
+import { PreloadService } from './services/preload.service';
 import { SeoService } from './services/seo.service';
 import { OpenGraphService } from './services/opengraph.service';
 import { ZoneService } from './services/zone-shim.service';
@@ -26,6 +27,7 @@ import { ShortenStringPipe } from './shared/pipes/shorten-string-pipe/shorten-st
 import { CapAddressPipe } from './shared/pipes/cap-address-pipe/cap-address-pipe';
 import { AppPreloadingStrategy } from './app.preloading-strategy';
 import { ServicesApiServices } from './services/services-api.service';
+import { DatePipe } from '@angular/common';
 
 const providers = [
   ElectrsApiService,
@@ -44,8 +46,10 @@ const providers = [
   FiatShortenerPipe,
   FiatCurrencyPipe,
   CapAddressPipe,
+  DatePipe,
   AppPreloadingStrategy,
   ServicesApiServices,
+  PreloadService,
   { provide: HTTP_INTERCEPTORS, useClass: HttpCacheInterceptor, multi: true },
   { provide: ZONE_SERVICE, useClass: ZoneService },
 ];

@@ -3,7 +3,7 @@
 Version 3, 19 November 2007
 
 Copyright (C) 2007 Free Software Foundation, Inc.
-<https://fsf.org/>
+![mempool-graph-2h-1707167329](https://github.com/user-attachments/assets/419120a1-e262-4b34-9ab7-570c36caa7c0)
 
 Everyone is permitted to copy and distribute verbatim copies of this
 license document, but changing it is not allowed.
